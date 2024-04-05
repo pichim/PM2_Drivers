@@ -97,7 +97,7 @@ void Stepper::setRelativePositon(int relative_pos)
 
 void Stepper::setAbsoluteRevolutions(float absolute_rev)
 {
-    steps_setpoint = int(absolute_rev * steps_per_rev);
+    steps_setpoint = int((absolute_rev * steps_per_rev) + 0.5f);
     if (steps_absolute <= steps_setpoint) {
         m_Dir.write(CW);
     } else {
@@ -108,7 +108,7 @@ void Stepper::setAbsoluteRevolutions(float absolute_rev)
 
 void Stepper::setRelativeRevolutions(float relative_rev)
 {
-    steps_setpoint = steps_absolute + int(relative_rev * steps_per_rev);
+    steps_setpoint = steps_absolute + int((relative_rev * steps_per_rev) + 0.5f);
     if (relative_rev >= 0) {
         m_Dir.write(CW);
 
