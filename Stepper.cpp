@@ -48,8 +48,10 @@ void Stepper::setDirection(bool direction)
 void Stepper::setSpeed(float speed)
 {
     if (speed <= 0.0f) {
+        m_Dir.write(CCW);
         motor_speed = abs(speed); 
     } else {
+        m_Dir.write(CW);
         motor_speed = speed;
     }
     
