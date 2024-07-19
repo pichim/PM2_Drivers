@@ -1,6 +1,4 @@
 #include "Stepper.h"
-#include <cstdio>
-#include <type_traits>
 
 Stepper::Stepper(PinName step_pin,
                  PinName dir_pin,
