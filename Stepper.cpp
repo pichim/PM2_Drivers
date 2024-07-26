@@ -2,192 +2,131 @@
 
 Stepper::Stepper(PinName step_pin,
                  PinName dir_pin,
-                 float initial_speed,
-                 int step_rev) : m_Step(step_pin), m_Dir(dir_pin), m_Thread(osPriorityHigh2)
+                 uint16_t step_per_rev) : m_Step(step_pin)
+                                        , m_Dir(dir_pin)
+                                        , m_Thread(osPriorityHigh2)
 {
-    motor_mode = MotorMode::VOID;
-    steps_per_rev = step_rev;
-    time_step_const = 1000000.0f/steps_per_rev;
-    setDirection(direction);
-    setSpeed(initial_speed);
-    m_Ticker.attach(callback(this, &Stepper::sendThreadFlag), std::chrono::microseconds{interval_time_mus});
+    m_steps_per_rev = static_cast<float>(step_per_rev);
+    m_time_step_const = 1.0e6f / m_steps_per_rev;
+
+    m_steps_setpoint = 0;
+    m_steps = 0;
+    m_velocity = 0.0f;
+
+    m_period_mus = 0;
+
     // start thread
-    m_Thread.start(callback(this, &Stepper::handler));
+    m_Thread.start(callback(this, &Stepper::threadTask));
 }
 
 Stepper::~Stepper()
 {
     m_Ticker.detach();
+    m_Timeout.detach();
     m_Thread.terminate();
 }
 
-// Functions to get values from driver
-float Stepper::getPosition() 
+void Stepper::setRotation(float rotations, float velocity)
 {
-    return float(steps_absolute);
+    setSteps(static_cast<int>(rotations * m_steps_per_rev + 0.5f), velocity);
 }
 
-float Stepper::getRotations()
+// void Stepper::setRotation(float rotations)
+// {
+//     setRotation(rotations, m_velocity);
+// }
+
+void Stepper::setRotationRelative(float rotations, float velocity)
 {
-    return (float(steps_absolute))/steps_per_rev;
+    setSteps(static_cast<int>(rotations * m_steps_per_rev + 0.5f) + m_steps, velocity);
 }
 
-float Stepper::getSpeed()
+// void Stepper::setRotationRelative(float rotations)
+// {
+//     setSteps(static_cast<int>(rotations * m_steps_per_rev + 0.5f) + m_steps, m_velocity);
+// }
+
+void Stepper::setVelocity(float velocity)
 {
-    return motor_speed;
+    if (velocity == 0.0f) {
+        m_velocity = 0.0f;
+        m_period_mus = 0;
+        m_Ticker.detach();
+        return;
+    } else if (velocity > 0.0f)
+        setSteps(STEPS_MAX, velocity);
+    else
+        setSteps(-STEPS_MAX, velocity);
 }
 
-// Functions to set parameters in driver
-void Stepper::setDirection(bool direction)
+void Stepper::setSteps(int steps, float velocity)
 {
-    m_Dir.write(direction);
-}
-
-void Stepper::setSpeed(float speed)
-{
-    if (speed <= 0.0f) {
-        m_Dir.write(CCW);
-        motor_speed = abs(speed); 
-    } else {
-        m_Dir.write(CW);
-        motor_speed = speed;
+    // return if setpoint is equal to steps or velocity is zero
+    m_steps_setpoint = steps;
+    if (m_steps_setpoint == m_steps || velocity == 0.0f) {
+        m_velocity = 0.0f;
+        m_period_mus = 0;
+        m_Ticker.detach();
+        return;
     }
     
-    interval_time_mus = int(time_step_const/motor_speed);
+    // write direction
+    if (m_steps_setpoint > m_steps)
+        m_Dir.write(1);
+    else
+        m_Dir.write(0);
 
-    motor_mode = MotorMode::STOP;
-    //interval_time_mus = speed;
-    motor_mode = MotorMode::VOID;
-    m_Ticker.attach(callback(this, &Stepper::sendThreadFlag), std::chrono::microseconds{interval_time_mus});
-}
+    // calculate period for ticker in microseconds
+    const int period_mus = static_cast<int>(m_time_step_const / fabs(velocity) + 0.5f);
+    
+    // make sure we only attach the ticker if the period has changed
+    if (m_period_mus != period_mus) {
 
-void Stepper::setAbsoluteZeroPosition()
-{
-    steps_absolute = 0;
-}
+        // update quantizised velocity
+        m_velocity = copysignf(m_time_step_const / static_cast<float>(period_mus), velocity);
 
-
-// Functions to use position commanding
-void Stepper::setAbsolutePosition(int absolute_pos)
-{   
-    stop_rotation = false;
-    steps_setpoint = absolute_pos;
-    if (steps_absolute <= steps_setpoint) {
-        m_Dir.write(CW);
-
-    } else {
-        m_Dir.write(CCW);
-    }
-    motor_mode = MotorMode::STEPS;
-}
-
-// Functions to use position commanding
-void Stepper::setRelativePositon(int relative_pos)
-{   
-    stop_rotation = false;
-    steps_setpoint = steps_absolute + relative_pos;
-    if (relative_pos >= 0) {
-        m_Dir.write(CW);
-
-    } else {
-        m_Dir.write(CCW);
-    }
-    motor_mode = MotorMode::STEPS;
-}
-
-void Stepper::setAbsoluteRevolutions(float absolute_rev)
-{
-    steps_setpoint = int((absolute_rev * steps_per_rev) + 0.5f);
-    if (steps_absolute <= steps_setpoint) {
-        m_Dir.write(CW);
-    } else {
-        m_Dir.write(CCW);
-    }
-    motor_mode = MotorMode::STEPS;
-}
-
-void Stepper::setRelativeRevolutions(float relative_rev)
-{
-    steps_setpoint = steps_absolute + int((relative_rev * steps_per_rev) + 0.5f);
-    if (relative_rev >= 0) {
-        m_Dir.write(CW);
-
-    } else {
-        m_Dir.write(CCW);
-    }
-    motor_mode = MotorMode::STEPS;
-}
-
-
-// Functions to use velocity commanding
-void Stepper::startRotation()
-{   
-    stop_rotation = false;
-    motor_mode = MotorMode::VELOCITY;
-}
-
-void Stepper::stopRotation()
-{
-    stop_rotation = true;
-}
-
-// Private functions
-void Stepper::handler()
-{
-    while (true) {
-        ThisThread::flags_wait_any(m_ThreadFlag);
-        switch (motor_mode) {
-            case MotorMode::STEPS:
-                if (steps_absolute == steps_setpoint) {
-                    motor_mode = MotorMode::VOID;
-                } else {
-                    step();
-                }
-                break;
-
-            case MotorMode::VELOCITY:
-                step();
-                if (stop_rotation == true) {
-                    motor_mode = MotorMode::VOID;
-                }
-                break;
-
-            case MotorMode::VOID:
-                disableDigitalOutput();
-                break;
-
-            case MotorMode::STOP:
-                m_Ticker.detach();
-                break;
-
-            default:
-
-                break; // should not happen
-        }
+        // update period
+        m_period_mus = period_mus;
+    
+        // attach sendThreadFlag() to ticker so that sendThreadFlag() is called periodically, which signals the thread to execute
+        m_Ticker.attach(callback(this, &Stepper::sendThreadFlag), std::chrono::microseconds{m_period_mus});
     }
 }
 
 void Stepper::step()
 {
+    // send one step via timeout
     enableDigitalOutput();
     m_Timeout.attach(callback(this, &Stepper::disableDigitalOutput), std::chrono::microseconds{PULSE_MUS});
-    if (m_Dir.read() == 0) {
-        steps_absolute++;
-    } else {
-        steps_absolute--;
-    }
+
+    // increment steps
+    if (m_Dir.read() == 0)
+        m_steps--;
+    else
+        m_steps++;
 }
 
 void Stepper::enableDigitalOutput()
 {
-    // set the digital output to high
-    m_Step = 1;
+    m_Step = 1; // set the digital output to high
 }
 
 void Stepper::disableDigitalOutput()
 {
-    // set the digital output to low
-    m_Step = 0;
+    m_Step = 0; // set the digital output to low
+}
+
+void Stepper::threadTask()
+{
+    while (true) {
+        ThisThread::flags_wait_any(m_ThreadFlag);
+
+        if (m_steps_setpoint == m_steps) {
+            m_period_mus = 0;
+            m_Ticker.detach();
+        } else
+            step();
+    }
 }
 
 void Stepper::sendThreadFlag()
