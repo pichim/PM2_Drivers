@@ -17,17 +17,19 @@ public:
     float getRotation() const { return static_cast<float>(m_steps) / m_steps_per_rev; };
     float getVelocity() const { return m_velocity; };
 
-    // void setInternalVelocity(float velocity = 0.0f) { m_velocity = velocity; };
-    // void setInternalRotation(float rotations = 0.0f) { m_steps = static_cast<int>(rotations * m_steps_per_rev + 0.5f); };
+    void setInternalVelocity(float velocity = 0.0f) { m_velocity = velocity; };
+    void setInternalRotation(float rotations = 0.0f) { m_steps = static_cast<int>(rotations * m_steps_per_rev + 0.5f); };
 
-    void setRotation(float rotations, float velocity);
-    // void setRotation(float rotations);
-    void setRotationRelative(float rotations, float velocity);
-    // void setRotationRelative(float rotations);
+    void setRotation(float rotations, float velocity = 1.0f);
+    void setRotation(float rotations);
+    void setRotationRelative(float rotations, float velocity = 1.0f);
+    void setRotationRelative(float rotations);
     void setVelocity(float velocity);
+    void setSteps(int steps, float velocity);
 
 private:
     static constexpr int PULSE_MUS = 10;
+    static constexpr int STEPS_MIN = std::numeric_limits<int>::min();
     static constexpr int STEPS_MAX = std::numeric_limits<int>::max();
 
     DigitalOut m_Step;
@@ -47,7 +49,6 @@ private:
 
     int m_period_mus;
 
-    void setSteps(int steps, float velocity);
     void step();
     void enableDigitalOutput();
     void disableDigitalOutput();

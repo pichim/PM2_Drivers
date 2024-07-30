@@ -11,7 +11,7 @@ Stepper::Stepper(PinName step_pin,
 
     m_steps_setpoint = 0;
     m_steps = 0;
-    m_velocity = 0.0f;
+    m_velocity = 1.0f;
 
     m_period_mus = 0;
 
@@ -31,20 +31,20 @@ void Stepper::setRotation(float rotations, float velocity)
     setSteps(static_cast<int>(rotations * m_steps_per_rev + 0.5f), velocity);
 }
 
-// void Stepper::setRotation(float rotations)
-// {
-//     setRotation(rotations, m_velocity);
-// }
+void Stepper::setRotation(float rotations)
+{
+    setRotation(rotations, m_velocity);
+}
 
 void Stepper::setRotationRelative(float rotations, float velocity)
 {
     setSteps(static_cast<int>(rotations * m_steps_per_rev + 0.5f) + m_steps, velocity);
 }
 
-// void Stepper::setRotationRelative(float rotations)
-// {
-//     setSteps(static_cast<int>(rotations * m_steps_per_rev + 0.5f) + m_steps, m_velocity);
-// }
+void Stepper::setRotationRelative(float rotations)
+{
+    setSteps(static_cast<int>(rotations * m_steps_per_rev + 0.5f) + m_steps, m_velocity);
+}
 
 void Stepper::setVelocity(float velocity)
 {
@@ -56,7 +56,7 @@ void Stepper::setVelocity(float velocity)
     } else if (velocity > 0.0f)
         setSteps(STEPS_MAX, velocity);
     else
-        setSteps(-STEPS_MAX, velocity);
+        setSteps(STEPS_MIN, velocity);
 }
 
 void Stepper::setSteps(int steps, float velocity)
